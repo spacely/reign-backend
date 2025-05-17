@@ -1,8 +1,8 @@
 # Use Node.js 18 Alpine as base image
 FROM node:18-alpine
 
-# Add tini for better signal handling
-RUN apk add --no-cache tini
+# Add tini and required build dependencies
+RUN apk add --no-cache tini python3 make g++
 
 # Set working directory
 WORKDIR /app
@@ -10,8 +10,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production && \
+# Install dependencies with better error handling
+RUN npm install --production --no-optional && \
     npm cache clean --force
 
 # Copy application files
