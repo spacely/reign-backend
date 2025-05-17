@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const pool = require('./config/db');
+const { pool, bootstrapSchema } = require('./config/db');
 require('dotenv').config();
 
 // Import routes
@@ -11,14 +11,21 @@ const locationsRouter = require('./routes/locations');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Test database connection on startup
-pool.query('SELECT NOW()', (err) => {
-    if (err) {
-        console.error('Fatal: Database connection failed:', err);
-        process.exit(1); // Exit if we can't connect to the database
+// Initialize database and bootstrap schema
+async function initializeDatabase() {
+    try {
+        // Test database connection
+        await pool.query('SELECT NOW()');
+        console.log('Successfully connected to Railway PostgreSQL');
+
+        // Bootstrap schema
+        await bootstrapSchema();
+        console.log('Database initialization complete');
+    } catch (err) {
+        console.error('Fatal: Database initialization failed:', err);
+        process.exit(1);
     }
-    console.log('Successfully connected to Railway PostgreSQL');
-});
+}
 
 // Middleware
 app.use(helmet());
@@ -48,7 +55,12 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Start server
-app.listen(port, '0.0.0.0', () => {
-    console.log(`Reign backend service running on port ${port}`);
+// Initialize database and start server
+initializeDatabase().then(() => {
+    app.listen(port, '0.0.0.0', () => {
+        console.log(`Reign backend service running on port ${port}`);
+    });
+}).catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
 }); 

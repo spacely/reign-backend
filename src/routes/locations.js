@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../config/db');
+const { pool } = require('../config/db');
 
 // POST /locations
 router.post('/', async (req, res) => {
