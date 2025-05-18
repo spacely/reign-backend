@@ -143,10 +143,12 @@ router.get('/nearby', async (req, res) => {
         const query = `
             SELECT 
                 u.id as "userId",
-                u.name,
+                COALESCE(u.name, u.email) as "displayName",
+                u.email,
                 p.mood,
                 l.latitude,
-                l.longitude
+                l.longitude,
+                l.created_at as "locationUpdatedAt"
             FROM locations l
             JOIN users u ON u.id = l.user_id
             LEFT JOIN LATERAL (
