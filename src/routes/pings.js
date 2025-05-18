@@ -3,33 +3,40 @@ const router = express.Router();
 const { pool } = require('../config/db');
 const { createNearbyCondition } = require('../utils/geo');
 
-// POST /locations
+// POST /pings
 router.post('/', async (req, res) => {
-    const { userId, lat, lng } = req.body;
+    const { userId, message, mood, latitude, longitude } = req.body;
 
     // Validate input
-    if (!userId || !lat || !lng) {
+    if (!userId || !message || !mood || !latitude || !longitude) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
     try {
-        await pool.query(
-            'INSERT INTO locations (user_id, latitude, longitude) VALUES ($1, $2, $3)',
-            [userId, lat, lng]
+        const result = await pool.query(
+            'INSERT INTO pings (user_id, message, mood, latitude, longitude) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [userId, message, mood, latitude, longitude]
         );
 
         res.json({
             status: 'ok',
-            message: 'Location saved successfully',
-            data: { userId, lat, lng }
+            message: 'Ping created successfully',
+            data: {
+                id: result.rows[0].id,
+                userId,
+                message,
+                mood,
+                latitude,
+                longitude
+            }
         });
     } catch (err) {
-        console.error('Error saving location:', err);
+        console.error('Error creating ping:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// GET /locations/nearby
+// GET /pings/nearby
 router.get('/nearby', async (req, res) => {
     const { lat, lng, radius } = req.query;
 
@@ -47,25 +54,20 @@ router.get('/nearby', async (req, res) => {
                 u.id as "userId",
                 u.name,
                 p.mood,
-                l.latitude,
-                l.longitude
-            FROM locations l
-            JOIN users u ON u.id = l.user_id
-            LEFT JOIN LATERAL (
-                SELECT mood 
-                FROM pings 
-                WHERE user_id = u.id 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            ) p ON true
-            WHERE ${createNearbyCondition('l')}
-            ORDER BY l.created_at DESC;
+                p.message,
+                p.latitude,
+                p.longitude,
+                p.created_at
+            FROM pings p
+            JOIN users u ON u.id = p.user_id
+            WHERE ${createNearbyCondition('p')}
+            ORDER BY p.created_at DESC;
         `;
 
         const result = await pool.query(query, [lat, lng, radius]);
         res.json(result.rows);
     } catch (err) {
-        console.error('Error fetching nearby locations:', err);
+        console.error('Error fetching nearby pings:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

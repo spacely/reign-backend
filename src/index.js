@@ -7,6 +7,7 @@ require('dotenv').config();
 // Import routes
 const profilesRouter = require('./routes/profiles');
 const locationsRouter = require('./routes/locations');
+const pingsRouter = require('./routes/pings');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -17,6 +18,13 @@ async function initializeDatabase() {
         // Test database connection
         await pool.query('SELECT NOW()');
         console.log('Successfully connected to Railway PostgreSQL');
+
+        // Enable PostGIS extensions
+        await pool.query(`
+            CREATE EXTENSION IF NOT EXISTS cube;
+            CREATE EXTENSION IF NOT EXISTS earthdistance;
+        `);
+        console.log('PostGIS extensions enabled');
 
         // Bootstrap schema
         await bootstrapSchema();
@@ -36,6 +44,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/profiles', profilesRouter);
 app.use('/locations', locationsRouter);
+app.use('/pings', pingsRouter);
 
 // Health check endpoint (useful for Railway)
 app.get('/health', (req, res) => {
