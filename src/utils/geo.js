@@ -10,7 +10,7 @@ function createNearbyCondition(tableName = 'locations') {
         earth_distance(
             ll_to_earth(${tableName}.latitude, ${tableName}.longitude),
             ll_to_earth($1, $2)
-        ) <= $3 * 1000
+        )::float <= ($3::float * 1000.0)
     `;
 }
 
