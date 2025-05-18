@@ -251,6 +251,7 @@ router.put('/:id', async (req, res) => {
         }
 
         // Update profile items if provided
+        const profileItems = [];
         if (items && Array.isArray(items)) {
             // First delete existing items
             await client.query('DELETE FROM profile_items WHERE user_id = $1', [id]);
@@ -265,11 +266,13 @@ router.put('/:id', async (req, res) => {
                     });
                 }
 
-                await client.query(
+                const itemResult = await client.query(
                     `INSERT INTO profile_items (user_id, item_type, item_data) 
-                     VALUES ($1, $2, $3)`,
+                     VALUES ($1, $2, $3)
+                     RETURNING id, item_type as "type", item_data as "data", created_at as "createdAt", updated_at as "updatedAt"`,
                     [id, item.type, item.data]
                 );
+                profileItems.push(itemResult.rows[0]);
             }
         }
 
@@ -281,22 +284,15 @@ router.put('/:id', async (req, res) => {
                 u.id as "userId",
                 u.email,
                 u.name,
-                u.updated_at as "updatedAt",
-                json_agg(
-                    json_build_object(
-                        'id', pi.id,
-                        'type', pi.item_type,
-                        'data', pi.item_data,
-                        'updatedAt', pi.updated_at
-                    )
-                ) FILTER (WHERE pi.id IS NOT NULL) as items
+                u.updated_at as "updatedAt"
             FROM users u
-            LEFT JOIN profile_items pi ON pi.user_id = u.id
             WHERE u.id = $1
-            GROUP BY u.id, u.email, u.name, u.updated_at
         `, [id]);
 
-        res.json(updatedProfile.rows[0]);
+        res.json({
+            ...updatedProfile.rows[0],
+            items: profileItems
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error updating profile:', err);
