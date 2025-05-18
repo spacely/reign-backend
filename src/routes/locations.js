@@ -143,8 +143,8 @@ router.get('/nearby', async (req, res) => {
         const query = `
             SELECT 
                 u.id as "userId",
-                COALESCE(u.name, u.email) as "displayName",
                 u.email,
+                u.name,
                 p.mood,
                 l.latitude,
                 l.longitude,
@@ -162,14 +162,23 @@ router.get('/nearby', async (req, res) => {
             ORDER BY l.created_at DESC;
         `;
 
-        const result = await pool.query(query, [latitude, longitude, radiusNum]);
-        res.json(result.rows);
+        const result = await client.query(query, [latitude, longitude, radiusNum]);
+
+        // Transform the results to include displayName
+        const transformedResults = result.rows.map(row => ({
+            ...row,
+            displayName: row.name || row.email
+        }));
+
+        res.json(transformedResults);
     } catch (err) {
         console.error('Error fetching nearby locations:', err);
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
+    } finally {
+        client.release();
     }
 });
 

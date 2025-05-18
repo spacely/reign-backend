@@ -179,13 +179,23 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { name, email, items } = req.body;
 
+    // Validate UUID format
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(id)) {
+        return res.status(400).json({
+            error: 'Invalid id',
+            details: 'Profile ID must be a valid UUID'
+        });
+    }
+
+    const client = await pool.connect();
     try {
-        await pool.query('BEGIN');
+        await client.query('BEGIN');
 
         // First check if user exists
-        const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [id]);
+        const userCheck = await client.query('SELECT id FROM users WHERE id = $1', [id]);
         if (userCheck.rows.length === 0) {
-            await pool.query('ROLLBACK');
+            await client.query('ROLLBACK');
             return res.status(404).json({
                 error: 'User not found',
                 details: `No user exists with id ${id}. Create a new user using POST /profiles first.`
@@ -220,9 +230,9 @@ router.put('/:id', async (req, res) => {
             `;
 
             try {
-                const userResult = await pool.query(updateQuery, values);
+                const userResult = await client.query(updateQuery, values);
                 if (userResult.rows.length === 0) {
-                    await pool.query('ROLLBACK');
+                    await client.query('ROLLBACK');
                     return res.status(404).json({
                         error: 'Update failed',
                         details: 'User update failed'
@@ -230,7 +240,7 @@ router.put('/:id', async (req, res) => {
                 }
             } catch (err) {
                 if (err.code === '23505' && err.constraint === 'users_email_key') {
-                    await pool.query('ROLLBACK');
+                    await client.query('ROLLBACK');
                     return res.status(409).json({
                         error: 'Email already exists',
                         details: 'A user with this email address already exists'
@@ -243,19 +253,19 @@ router.put('/:id', async (req, res) => {
         // Update profile items if provided
         if (items && Array.isArray(items)) {
             // First delete existing items
-            await pool.query('DELETE FROM profile_items WHERE user_id = $1', [id]);
+            await client.query('DELETE FROM profile_items WHERE user_id = $1', [id]);
 
             // Then insert new items
             for (const item of items) {
                 if (!item.type || !item.data) {
-                    await pool.query('ROLLBACK');
+                    await client.query('ROLLBACK');
                     return res.status(400).json({
                         error: 'Invalid item format',
                         details: 'Each item must have type and data fields'
                     });
                 }
 
-                await pool.query(
+                await client.query(
                     `INSERT INTO profile_items (user_id, item_type, item_data) 
                      VALUES ($1, $2, $3)`,
                     [id, item.type, item.data]
@@ -263,10 +273,10 @@ router.put('/:id', async (req, res) => {
             }
         }
 
-        await pool.query('COMMIT');
+        await client.query('COMMIT');
 
         // Fetch and return updated profile
-        const updatedProfile = await pool.query(`
+        const updatedProfile = await client.query(`
             SELECT 
                 u.id as "userId",
                 u.email,
@@ -288,12 +298,14 @@ router.put('/:id', async (req, res) => {
 
         res.json(updatedProfile.rows[0]);
     } catch (err) {
-        await pool.query('ROLLBACK');
+        await client.query('ROLLBACK');
         console.error('Error updating profile:', err);
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
+    } finally {
+        client.release();
     }
 });
 
