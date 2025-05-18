@@ -1,20 +1,58 @@
--- Recreate profile_items table with correct UUID types
+-- Update profile_items table to use correct UUID types
 DO $$ 
 BEGIN 
-    -- Drop the existing table if it exists
-    DROP TABLE IF EXISTS profile_items;
+    -- First check if we need to modify the table
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'profile_items' 
+        AND column_name = 'id' 
+        AND data_type != 'uuid'
+    ) THEN
+        -- Backup existing data
+        CREATE TEMP TABLE profile_items_backup AS 
+        SELECT * FROM profile_items;
 
-    -- Recreate the table with correct UUID types
-    CREATE TABLE profile_items (
-        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        user_id UUID NOT NULL,
-        item_type VARCHAR(50) NOT NULL,
-        item_data JSONB NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT profile_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+        -- Alter the columns to use UUID
+        ALTER TABLE profile_items
+        ALTER COLUMN id TYPE UUID USING id::uuid,
+        ALTER COLUMN user_id TYPE UUID USING user_id::uuid;
 
-    -- Recreate indexes
-    CREATE INDEX idx_profile_items_user_id ON profile_items(user_id);
+        -- Verify the backup data
+        IF EXISTS (SELECT 1 FROM profile_items_backup) THEN
+            -- Clear the table to reinsert with correct types
+            TRUNCATE profile_items;
+
+            -- Reinsert the data with correct UUID types
+            INSERT INTO profile_items (
+                id, 
+                user_id, 
+                item_type, 
+                item_data, 
+                created_at, 
+                updated_at
+            )
+            SELECT 
+                id::uuid, 
+                user_id::uuid, 
+                item_type, 
+                item_data, 
+                created_at, 
+                updated_at
+            FROM profile_items_backup;
+        END IF;
+
+        -- Drop the temporary backup table
+        DROP TABLE profile_items_backup;
+    END IF;
+
+    -- Ensure the index exists
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_indexes 
+        WHERE tablename = 'profile_items' 
+        AND indexname = 'idx_profile_items_user_id'
+    ) THEN
+        CREATE INDEX idx_profile_items_user_id ON profile_items(user_id);
+    END IF;
 END $$; 

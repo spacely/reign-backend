@@ -53,13 +53,15 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // Update or insert location
+        // Update or insert location using exact specified query
         const result = await pool.query(
-            `INSERT INTO locations (user_id, latitude, longitude)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id) 
-             DO UPDATE SET latitude = $2, longitude = $3, created_at = CURRENT_TIMESTAMP
-             RETURNING id`,
+            `INSERT INTO locations (user_id, latitude, longitude, created_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (user_id) DO UPDATE
+             SET latitude = EXCLUDED.latitude,
+                 longitude = EXCLUDED.longitude,
+                 created_at = NOW()
+             RETURNING id, user_id, latitude, longitude, created_at`,
             [userId, parseFloat(lat), parseFloat(lng)]
         );
 
@@ -68,9 +70,10 @@ router.post('/', async (req, res) => {
             message: 'Location saved successfully',
             data: {
                 id: result.rows[0].id,
-                userId,
-                latitude: parseFloat(lat),
-                longitude: parseFloat(lng)
+                userId: result.rows[0].user_id,
+                latitude: result.rows[0].latitude,
+                longitude: result.rows[0].longitude,
+                updatedAt: result.rows[0].created_at
             }
         });
     } catch (err) {
@@ -145,19 +148,11 @@ router.get('/nearby', async (req, res) => {
                 u.id as "userId",
                 u.email,
                 u.name,
-                p.mood,
                 l.latitude,
                 l.longitude,
                 l.created_at as "locationUpdatedAt"
             FROM locations l
             JOIN users u ON u.id = l.user_id
-            LEFT JOIN LATERAL (
-                SELECT mood 
-                FROM pings 
-                WHERE user_id = u.id 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            ) p ON true
             WHERE ${createNearbyCondition('l')}
             ORDER BY l.created_at DESC;
         `;

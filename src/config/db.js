@@ -19,8 +19,43 @@ async function enablePostGISExtensions(client) {
     console.log('PostGIS extensions enabled');
 }
 
+// Function to verify database connection and schema
+async function verifyDatabaseConnection() {
+    const client = await pool.connect();
+    try {
+        // Test basic connection
+        await client.query('SELECT NOW()');
+        console.log('Successfully connected to PostgreSQL');
+
+        // Enable required extensions
+        await enablePostGISExtensions(client);
+
+        // Verify schema exists
+        await verifySchema(client);
+    } finally {
+        client.release();
+    }
+}
+
 // Function to verify schema
 async function verifySchema(client) {
+    // Check if tables exist
+    const tables = ['users', 'profile_items', 'locations', 'pings'];
+    for (const table of tables) {
+        const result = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = $1
+            );
+        `, [table]);
+
+        if (!result.rows[0].exists) {
+            throw new Error(`Required table '${table}' does not exist. Please run migrations manually.`);
+        }
+    }
+
+    // Verify users table structure
     const result = await client.query(`
         SELECT column_name, data_type 
         FROM information_schema.columns 
@@ -28,7 +63,7 @@ async function verifySchema(client) {
     `);
 
     const columns = result.rows.map(row => row.column_name);
-    const requiredColumns = ['id', 'email', 'created_at', 'updated_at'];
+    const requiredColumns = ['id', 'email', 'name', 'created_at', 'updated_at'];
 
     const missingColumns = requiredColumns.filter(col => !columns.includes(col));
     if (missingColumns.length > 0) {
@@ -36,15 +71,13 @@ async function verifySchema(client) {
     }
 }
 
-// Function to clean up database
-async function cleanupDatabase(client) {
-    const dropScript = fs.readFileSync(path.join(__dirname, '../../database/drop_all.sql'), 'utf8');
-    await client.query(dropScript);
-    console.log('Database cleaned up successfully');
-}
-
 // Function to run migrations
 async function runMigrations(client) {
+    // Prevent running in production unless explicitly allowed
+    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_MIGRATIONS) {
+        throw new Error('Cannot run migrations in production without ALLOW_MIGRATIONS flag');
+    }
+
     const migrationsDir = path.join(__dirname, '../../database/migrations');
 
     try {
@@ -95,35 +128,17 @@ async function runMigrations(client) {
     }
 }
 
-// Function to bootstrap schema
-async function bootstrapSchema() {
+// Function to reset database (development only)
+async function resetDatabase() {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('Cannot reset database in production environment');
+    }
+
     const client = await pool.connect();
     try {
-        // First clean up the database
-        await cleanupDatabase(client);
-        console.log('Old schema dropped successfully');
-
-        // Enable PostGIS extensions first
-        await enablePostGISExtensions(client);
-
-        // Read the schema file
-        const schemaPath = path.join(__dirname, '../../database/schema.sql');
-        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
-
-        // Execute the schema
-        await client.query(schemaSQL);
-        console.log('Schema successfully bootstrapped');
-
-        // Run migrations
-        await runMigrations(client);
-        console.log('Migrations completed');
-
-        // Verify schema
-        await verifySchema(client);
-        console.log('Schema verification successful');
-    } catch (err) {
-        console.error('Error bootstrapping schema:', err);
-        throw err; // Re-throw to handle in index.js
+        const resetScript = fs.readFileSync(path.join(__dirname, '../../scripts/dev/reset/drop_all.sql'), 'utf8');
+        await client.query(resetScript);
+        console.log('Database reset successfully');
     } finally {
         client.release();
     }
@@ -131,6 +146,8 @@ async function bootstrapSchema() {
 
 module.exports = {
     pool,
-    bootstrapSchema,
+    verifyDatabaseConnection,
+    runMigrations,
+    resetDatabase,
     enablePostGISExtensions
 }; 
