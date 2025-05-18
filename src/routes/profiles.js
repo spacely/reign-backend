@@ -2,6 +2,94 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
 
+// POST /profiles - Create a new user
+router.post('/', async (req, res) => {
+    const { email, name, items } = req.body;
+
+    // Validate required fields
+    if (!email) {
+        return res.status(400).json({
+            error: 'Missing required fields',
+            details: 'Email is required'
+        });
+    }
+
+    // Validate email format
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_REGEX.test(email)) {
+        return res.status(400).json({
+            error: 'Invalid email',
+            details: 'Please provide a valid email address'
+        });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Create user
+        const userResult = await client.query(
+            `INSERT INTO users (email, name) 
+             VALUES ($1, $2) 
+             RETURNING id, email, name, created_at as "createdAt", updated_at as "updatedAt"`,
+            [email, name || null]
+        );
+
+        const userId = userResult.rows[0].id;
+        const profileItems = [];
+
+        // Add profile items if provided
+        if (items && Array.isArray(items)) {
+            for (const item of items) {
+                if (!item.type || !item.data) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        error: 'Invalid profile item',
+                        details: 'Each profile item must have type and data fields'
+                    });
+                }
+
+                const itemResult = await client.query(
+                    `INSERT INTO profile_items (user_id, item_type, item_data)
+                     VALUES ($1, $2, $3)
+                     RETURNING id, item_type, item_data, created_at as "createdAt"`,
+                    [userId, item.type, item.data]
+                );
+                profileItems.push(itemResult.rows[0]);
+            }
+        }
+
+        await client.query('COMMIT');
+
+        res.status(201).json({
+            status: 'ok',
+            message: 'Profile created successfully',
+            data: {
+                user: userResult.rows[0],
+                items: profileItems
+            }
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+
+        if (err.code === '23505') { // Unique violation
+            return res.status(409).json({
+                error: 'Email already exists',
+                details: 'This email address is already registered'
+            });
+        }
+
+        console.error('Error creating profile:', err);
+        res.status(500).json({
+            error: 'Internal server error',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    } finally {
+        client.release();
+    }
+});
+
 // GET /profiles/:id
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
@@ -100,7 +188,7 @@ router.put('/:id', async (req, res) => {
             await pool.query('ROLLBACK');
             return res.status(404).json({
                 error: 'User not found',
-                details: `No user exists with id ${id}`
+                details: `No user exists with id ${id}. Create a new user using POST /profiles first.`
             });
         }
 
@@ -131,13 +219,24 @@ router.put('/:id', async (req, res) => {
                 RETURNING id, name, email, updated_at as "updatedAt"
             `;
 
-            const userResult = await pool.query(updateQuery, values);
-            if (userResult.rows.length === 0) {
-                await pool.query('ROLLBACK');
-                return res.status(404).json({
-                    error: 'Update failed',
-                    details: 'User update failed'
-                });
+            try {
+                const userResult = await pool.query(updateQuery, values);
+                if (userResult.rows.length === 0) {
+                    await pool.query('ROLLBACK');
+                    return res.status(404).json({
+                        error: 'Update failed',
+                        details: 'User update failed'
+                    });
+                }
+            } catch (err) {
+                if (err.code === '23505' && err.constraint === 'users_email_key') {
+                    await pool.query('ROLLBACK');
+                    return res.status(409).json({
+                        error: 'Email already exists',
+                        details: 'A user with this email address already exists'
+                    });
+                }
+                throw err;
             }
         }
 

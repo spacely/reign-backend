@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../config/db');
+const { pool, enablePostGISExtensions } = require('../config/db');
 const { createNearbyCondition } = require('../utils/geo');
 
 // POST /pings
@@ -127,9 +127,9 @@ router.get('/nearby', async (req, res) => {
         });
     }
 
+    const client = await pool.connect();
     try {
-        // Enable PostGIS earth distance functions
-        await pool.query('CREATE EXTENSION IF NOT EXISTS cube; CREATE EXTENSION IF NOT EXISTS earthdistance;');
+        await enablePostGISExtensions(client);
 
         const query = `
             SELECT 

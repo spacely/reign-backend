@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../config/db');
+const { pool, enablePostGISExtensions } = require('../config/db');
 const { createNearbyCondition } = require('../utils/geo');
 
 // POST /locations
@@ -34,22 +34,22 @@ router.post('/', async (req, res) => {
         });
     }
 
-    // Validate userId is a number
-    const userIdNum = parseInt(userId);
-    if (isNaN(userIdNum)) {
+    // Validate UUID format
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(userId)) {
         return res.status(400).json({
             error: 'Invalid userId',
-            details: 'userId must be a number'
+            details: 'userId must be a valid UUID'
         });
     }
 
     try {
         // First check if user exists
-        const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userIdNum]);
+        const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
         if (userCheck.rows.length === 0) {
             return res.status(404).json({
                 error: 'User not found',
-                details: `No user exists with id ${userIdNum}`
+                details: `No user exists with id ${userId}`
             });
         }
 
@@ -60,7 +60,7 @@ router.post('/', async (req, res) => {
              ON CONFLICT (user_id) 
              DO UPDATE SET latitude = $2, longitude = $3, created_at = CURRENT_TIMESTAMP
              RETURNING id`,
-            [userIdNum, parseFloat(lat), parseFloat(lng)]
+            [userId, parseFloat(lat), parseFloat(lng)]
         );
 
         res.json({
@@ -68,7 +68,7 @@ router.post('/', async (req, res) => {
             message: 'Location saved successfully',
             data: {
                 id: result.rows[0].id,
-                userId: userIdNum,
+                userId,
                 latitude: parseFloat(lat),
                 longitude: parseFloat(lng)
             }
@@ -136,9 +136,9 @@ router.get('/nearby', async (req, res) => {
         });
     }
 
+    const client = await pool.connect();
     try {
-        // Enable PostGIS earth distance functions
-        await pool.query('CREATE EXTENSION IF NOT EXISTS cube; CREATE EXTENSION IF NOT EXISTS earthdistance;');
+        await enablePostGISExtensions(client);
 
         const query = `
             SELECT 
