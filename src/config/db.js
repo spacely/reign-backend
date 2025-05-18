@@ -36,6 +36,13 @@ async function verifySchema(client) {
     }
 }
 
+// Function to clean up database
+async function cleanupDatabase(client) {
+    const dropScript = fs.readFileSync(path.join(__dirname, '../../database/drop_all.sql'), 'utf8');
+    await client.query(dropScript);
+    console.log('Database cleaned up successfully');
+}
+
 // Function to run migrations
 async function runMigrations(client) {
     const migrationsDir = path.join(__dirname, '../../database/migrations');
@@ -92,6 +99,10 @@ async function runMigrations(client) {
 async function bootstrapSchema() {
     const client = await pool.connect();
     try {
+        // First clean up the database
+        await cleanupDatabase(client);
+        console.log('Old schema dropped successfully');
+
         // Enable PostGIS extensions first
         await enablePostGISExtensions(client);
 

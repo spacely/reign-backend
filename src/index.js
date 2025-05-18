@@ -19,16 +19,12 @@ async function initializeDatabase() {
         await pool.query('SELECT NOW()');
         console.log('Successfully connected to Railway PostgreSQL');
 
-        // Enable PostGIS extensions
-        await pool.query(`
-            CREATE EXTENSION IF NOT EXISTS cube;
-            CREATE EXTENSION IF NOT EXISTS earthdistance;
-        `);
-        console.log('PostGIS extensions enabled');
+        console.log('Starting database initialization...');
+        console.log('This will drop all existing tables and recreate the schema...');
 
-        // Bootstrap schema
+        // Bootstrap schema (this will drop everything first)
         await bootstrapSchema();
-        console.log('Database initialization complete');
+        console.log('Database initialization complete with fresh schema');
     } catch (err) {
         console.error('Fatal: Database initialization failed:', err);
         process.exit(1);
