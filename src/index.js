@@ -8,6 +8,7 @@ require('dotenv').config();
 const profilesRouter = require('./routes/profiles');
 const locationsRouter = require('./routes/locations');
 const pingsRouter = require('./routes/pings');
+const connectRouter = require('./routes/connect');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -33,6 +34,7 @@ app.use(express.json());
 app.use('/profiles', profilesRouter);
 app.use('/locations', locationsRouter);
 app.use('/pings', pingsRouter);
+app.use('/connect', connectRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
