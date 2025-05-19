@@ -61,7 +61,7 @@ router.post('/', async (req, res) => {
              SET latitude = EXCLUDED.latitude,
                  longitude = EXCLUDED.longitude,
                  created_at = NOW()
-             RETURNING id, user_id, latitude, longitude, created_at`,
+             RETURNING user_id, latitude, longitude, created_at`,
             [userId, parseFloat(lat), parseFloat(lng)]
         );
 
@@ -69,7 +69,6 @@ router.post('/', async (req, res) => {
             status: 'ok',
             message: 'Location saved successfully',
             data: {
-                id: result.rows[0].id,
                 userId: result.rows[0].user_id,
                 latitude: result.rows[0].latitude,
                 longitude: result.rows[0].longitude,
