@@ -134,6 +134,8 @@ router.get('/nearby', async (req, res) => {
     try {
         await enablePostGISExtensions(client);
 
+        const radiusNum = parseFloat(req.query.radius) || 10;
+
         const query = `
             SELECT 
                 u.id as "userId",
