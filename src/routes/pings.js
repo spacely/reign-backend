@@ -75,55 +75,58 @@ router.post('/', async (req, res) => {
 
 // GET /pings/nearby
 router.get('/nearby', async (req, res) => {
-    const { lat, lng, radius } = req.query;
+    const { lat, lng, userId } = req.query;
 
-    // Validate input
-    if (!lat || !lng || !radius) {
+    // Log incoming parameters
+    console.log('GET /pings/nearby - Query params:', { lat, lng, userId });
+
+    // Validate required parameters
+    if (!lat || !lng || !userId) {
+        console.log('GET /pings/nearby - Missing parameters:', {
+            lat: !lat ? 'missing' : 'present',
+            lng: !lng ? 'missing' : 'present',
+            userId: !userId ? 'missing' : 'present'
+        });
         return res.status(400).json({
-            error: 'Missing required query parameters',
-            details: {
-                lat: !lat ? 'Missing latitude' : null,
-                lng: !lng ? 'Missing longitude' : null,
-                radius: !radius ? 'Missing radius' : null
-            }
+            error: 'Missing or invalid lat, lng, or userId'
         });
     }
 
     // Validate numeric values
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lng);
-    const radiusNum = parseFloat(radius);
 
-    if (isNaN(latitude) || isNaN(longitude) || isNaN(radiusNum)) {
+    if (isNaN(latitude) || isNaN(longitude)) {
+        console.log('GET /pings/nearby - Invalid numeric values:', {
+            lat: isNaN(latitude) ? 'not a number' : latitude,
+            lng: isNaN(longitude) ? 'not a number' : longitude
+        });
         return res.status(400).json({
-            error: 'Invalid parameters',
-            details: {
-                lat: isNaN(latitude) ? 'Must be a number' : null,
-                lng: isNaN(longitude) ? 'Must be a number' : null,
-                radius: isNaN(radiusNum) ? 'Must be a number' : null
-            }
+            error: 'Missing or invalid lat, lng, or userId'
         });
     }
 
-    // Validate ranges
-    if (latitude < -90 || latitude > 90) {
+    // Validate UUID format
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(userId)) {
+        console.log('GET /pings/nearby - Invalid UUID format:', { userId });
         return res.status(400).json({
-            error: 'Invalid latitude',
-            details: 'Latitude must be between -90 and 90'
+            error: 'Missing or invalid lat, lng, or userId'
+        });
+    }
+
+    // Validate coordinate ranges
+    if (latitude < -90 || latitude > 90) {
+        console.log('GET /pings/nearby - Invalid latitude range:', { latitude });
+        return res.status(400).json({
+            error: 'Missing or invalid lat, lng, or userId'
         });
     }
 
     if (longitude < -180 || longitude > 180) {
+        console.log('GET /pings/nearby - Invalid longitude range:', { longitude });
         return res.status(400).json({
-            error: 'Invalid longitude',
-            details: 'Longitude must be between -180 and 180'
-        });
-    }
-
-    if (radiusNum <= 0) {
-        return res.status(400).json({
-            error: 'Invalid radius',
-            details: 'Radius must be greater than 0'
+            error: 'Missing or invalid lat, lng, or userId'
         });
     }
 
