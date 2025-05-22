@@ -134,7 +134,8 @@ router.get('/nearby', async (req, res) => {
     try {
         await enablePostGISExtensions(client);
 
-        const radiusNum = parseFloat(req.query.radius) || 10;
+        // Fixed 1km radius (1000 meters)
+        const radiusMeters = 1000;
 
         const query = `
             SELECT 
@@ -146,19 +147,30 @@ router.get('/nearby', async (req, res) => {
                 p.mood,
                 p.latitude,
                 p.longitude,
-                p.created_at as "createdAt"
+                p.created_at as "createdAt",
+                earth_distance(
+                    ll_to_earth(p.latitude, p.longitude),
+                    ll_to_earth($1, $2)
+                )::float as distance
             FROM pings p
             JOIN users u ON u.id = p.user_id
-            WHERE ${createNearbyCondition('p')}
-            ORDER BY p.created_at DESC;
+            WHERE 
+                p.user_id != $3
+                AND p.created_at > NOW() - INTERVAL '15 minutes'
+                AND earth_distance(
+                    ll_to_earth(p.latitude, p.longitude),
+                    ll_to_earth($1, $2)
+                )::float <= $4
+            ORDER BY distance ASC, p.created_at DESC;
         `;
 
-        const result = await client.query(query, [latitude, longitude, radiusNum]);
+        const result = await client.query(query, [latitude, longitude, userId, radiusMeters]);
 
         // Transform the results to include displayName
         const transformedResults = result.rows.map(row => ({
             ...row,
-            displayName: row.name || row.email
+            displayName: row.name || row.email,
+            distance: Math.round(row.distance) // Round to nearest meter
         }));
 
         res.json(transformedResults);
