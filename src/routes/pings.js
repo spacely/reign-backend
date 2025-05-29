@@ -3,12 +3,15 @@ const router = express.Router();
 const { pool, enablePostGISExtensions } = require('../config/db');
 const { createNearbyCondition } = require('../utils/geo');
 
+// Validate category helper function
+const isValidCategory = (category) => ['skill', 'education', 'experience'].includes(category);
+
 // POST /pings
 router.post('/', async (req, res) => {
-    const { userId, message, mood, latitude, longitude, lookingFor } = req.body;
+    const { userId, message, mood, latitude, longitude, category, value } = req.body;
 
     // Validate input
-    if (!userId || !message || !mood || !latitude || !longitude) {
+    if (!userId || !message || !mood || !latitude || !longitude || !category || !value) {
         return res.status(400).json({
             error: 'Missing required fields',
             details: {
@@ -16,8 +19,18 @@ router.post('/', async (req, res) => {
                 message: !message ? 'Missing message' : null,
                 mood: !mood ? 'Missing mood' : null,
                 latitude: !latitude ? 'Missing latitude' : null,
-                longitude: !longitude ? 'Missing longitude' : null
+                longitude: !longitude ? 'Missing longitude' : null,
+                category: !category ? 'Missing category' : null,
+                value: !value ? 'Missing value' : null
             }
+        });
+    }
+
+    // Validate category
+    if (!isValidCategory(category)) {
+        return res.status(400).json({
+            error: 'Invalid category',
+            details: 'Category must be one of: skill, education, experience'
         });
     }
 
@@ -47,8 +60,8 @@ router.post('/', async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO pings (user_id, message, mood, latitude, longitude, looking_for) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at',
-            [userId, message, mood, parseFloat(latitude), parseFloat(longitude), lookingFor]
+            'INSERT INTO pings (user_id, message, mood, latitude, longitude, category, value) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at',
+            [userId, message, mood, parseFloat(latitude), parseFloat(longitude), category, value]
         );
 
         res.json({
@@ -61,7 +74,8 @@ router.post('/', async (req, res) => {
                 mood,
                 latitude: parseFloat(latitude),
                 longitude: parseFloat(longitude),
-                lookingFor,
+                category,
+                value,
                 createdAt: result.rows[0].created_at
             }
         });
@@ -148,7 +162,8 @@ router.get('/nearby', async (req, res) => {
                 p.mood,
                 p.latitude,
                 p.longitude,
-                p.looking_for as "lookingFor",
+                p.category,
+                p.value,
                 p.created_at as "createdAt",
                 earth_distance(
                     ll_to_earth(p.latitude, p.longitude),
