@@ -5,7 +5,7 @@ const { createNearbyCondition } = require('../utils/geo');
 
 // POST /pings
 router.post('/', async (req, res) => {
-    const { userId, message, mood, latitude, longitude } = req.body;
+    const { userId, message, mood, latitude, longitude, lookingFor } = req.body;
 
     // Validate input
     if (!userId || !message || !mood || !latitude || !longitude) {
@@ -47,8 +47,8 @@ router.post('/', async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO pings (user_id, message, mood, latitude, longitude) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at',
-            [userId, message, mood, parseFloat(latitude), parseFloat(longitude)]
+            'INSERT INTO pings (user_id, message, mood, latitude, longitude, looking_for) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at',
+            [userId, message, mood, parseFloat(latitude), parseFloat(longitude), lookingFor]
         );
 
         res.json({
@@ -61,6 +61,7 @@ router.post('/', async (req, res) => {
                 mood,
                 latitude: parseFloat(latitude),
                 longitude: parseFloat(longitude),
+                lookingFor,
                 createdAt: result.rows[0].created_at
             }
         });
@@ -147,6 +148,7 @@ router.get('/nearby', async (req, res) => {
                 p.mood,
                 p.latitude,
                 p.longitude,
+                p.looking_for as "lookingFor",
                 p.created_at as "createdAt",
                 earth_distance(
                     ll_to_earth(p.latitude, p.longitude),
