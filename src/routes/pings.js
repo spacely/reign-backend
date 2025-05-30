@@ -206,17 +206,17 @@ router.get('/nearby', async (req, res) => {
 router.get('/filters', async (req, res) => {
     try {
         const queries = [
-            pool.query("SELECT DISTINCT value FROM pings WHERE category = 'skill' AND value IS NOT NULL"),
-            pool.query("SELECT DISTINCT value FROM pings WHERE category = 'education' AND value IS NOT NULL"),
-            pool.query("SELECT DISTINCT value FROM pings WHERE category = 'experience' AND value IS NOT NULL")
+            pool.query("SELECT DISTINCT item_data FROM profile_items WHERE item_type = 'skills'"),
+            pool.query("SELECT DISTINCT item_data FROM profile_items WHERE item_type = 'education'"),
+            pool.query("SELECT DISTINCT item_data FROM profile_items WHERE item_type = 'experience'")
         ];
 
         const [skillsResult, educationResult, experienceResult] = await Promise.all(queries);
 
         res.json({
-            skills: skillsResult.rows.map(row => row.value),
-            education: educationResult.rows.map(row => row.value),
-            experience: experienceResult.rows.map(row => row.value)
+            skills: skillsResult.rows.map(row => row.item_data),
+            education: educationResult.rows.map(row => row.item_data),
+            experience: experienceResult.rows.map(row => row.item_data)
         });
     } catch (err) {
         console.error('Error fetching filters:', err);
