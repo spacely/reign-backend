@@ -42,11 +42,15 @@ router.post('/', async (req, res) => {
         // Add profile items if provided
         if (items && Array.isArray(items)) {
             for (const item of items) {
-                if (!item.type || !item.data) {
+                // Support both formats: type/data and item_type/item_data
+                const itemType = item.type || item.item_type;
+                const itemData = item.data || item.item_data;
+
+                if (!itemType || !itemData) {
                     await client.query('ROLLBACK');
                     return res.status(400).json({
                         error: 'Invalid profile item',
-                        details: 'Each profile item must have type and data fields'
+                        details: 'Each profile item must have either type/data or item_type/item_data fields'
                     });
                 }
 
@@ -54,7 +58,7 @@ router.post('/', async (req, res) => {
                     `INSERT INTO profile_items (user_id, item_type, item_data)
                      VALUES ($1, $2, $3)
                      RETURNING id, item_type, item_data, created_at as "createdAt"`,
-                    [userId, item.type, item.data]
+                    [userId, itemType, itemData]
                 );
                 profileItems.push(itemResult.rows[0]);
             }
@@ -258,11 +262,15 @@ router.put('/:id', async (req, res) => {
 
             // Then insert new items
             for (const item of items) {
-                if (!item.type || !item.data) {
+                // Support both formats: type/data and item_type/item_data
+                const itemType = item.type || item.item_type;
+                const itemData = item.data || item.item_data;
+
+                if (!itemType || !itemData) {
                     await client.query('ROLLBACK');
                     return res.status(400).json({
                         error: 'Invalid item format',
-                        details: 'Each item must have type and data fields'
+                        details: 'Each item must have either type/data or item_type/item_data fields'
                     });
                 }
 
@@ -270,7 +278,7 @@ router.put('/:id', async (req, res) => {
                     `INSERT INTO profile_items (user_id, item_type, item_data) 
                      VALUES ($1, $2, $3)
                      RETURNING id, item_type as "type", item_data as "data", created_at as "createdAt", updated_at as "updatedAt"`,
-                    [id, item.type, item.data]
+                    [id, itemType, itemData]
                 );
                 profileItems.push(itemResult.rows[0]);
             }
