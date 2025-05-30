@@ -67,7 +67,7 @@ router.post('/', async (req, res) => {
             message: 'Profile created successfully',
             data: {
                 user: userResult.rows[0],
-                items: profileItems
+                profileItems: profileItems
             }
         });
     } catch (err) {
@@ -161,7 +161,7 @@ router.get('/:id', async (req, res) => {
         // Combine all data
         res.json({
             ...userResult.rows[0],
-            items: itemsResult.rows,
+            profileItems: itemsResult.rows,
             location: locationResult.rows[0] || null,
             lastPing: pingResult.rows[0] || null
         });
@@ -291,7 +291,7 @@ router.put('/:id', async (req, res) => {
 
         res.json({
             ...updatedProfile.rows[0],
-            items: profileItems
+            profileItems: profileItems
         });
     } catch (err) {
         await client.query('ROLLBACK');
