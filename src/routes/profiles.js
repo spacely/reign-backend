@@ -4,7 +4,7 @@ const { pool } = require('../config/db');
 
 // POST /profiles - Create a new user
 router.post('/', async (req, res) => {
-    const { email, name, items } = req.body;
+    const { email, name, profileItems: items } = req.body;
 
     // Validate required fields
     if (!email) {
@@ -177,7 +177,7 @@ router.get('/:id', async (req, res) => {
 // PUT /profiles/:id
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, email, items } = req.body;
+    const { name, email, profileItems: items } = req.body;
 
     // Validate UUID format
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
