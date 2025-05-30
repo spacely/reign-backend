@@ -58,7 +58,7 @@ router.post('/', async (req, res) => {
                     `INSERT INTO profile_items (user_id, item_type, item_data)
                      VALUES ($1, $2, $3)
                      RETURNING id, item_type, item_data, created_at as "createdAt"`,
-                    [userId, itemType, itemData]
+                    [userId, itemType, JSON.stringify(itemData)]
                 );
                 profileItems.push(itemResult.rows[0]);
             }
@@ -278,7 +278,7 @@ router.put('/:id', async (req, res) => {
                     `INSERT INTO profile_items (user_id, item_type, item_data) 
                      VALUES ($1, $2, $3)
                      RETURNING id, item_type as "type", item_data as "data", created_at as "createdAt", updated_at as "updatedAt"`,
-                    [id, itemType, itemData]
+                    [id, itemType, JSON.stringify(itemData)]
                 );
                 profileItems.push(itemResult.rows[0]);
             }
