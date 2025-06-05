@@ -181,7 +181,7 @@ router.get('/:id', async (req, res) => {
 // PUT /profiles/:id
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, email, profileItems: items } = req.body;
+    const { name, email, profileItems: items, moodBadges } = req.body;
 
     // Validate UUID format
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -284,6 +284,33 @@ router.put('/:id', async (req, res) => {
             }
         }
 
+        // Update mood badges if provided
+        const savedMoodBadges = [];
+        if (moodBadges && Array.isArray(moodBadges)) {
+            // First delete existing mood badges
+            await client.query('DELETE FROM mood_badges WHERE user_id = $1', [id]);
+
+            // Validate each mood badge
+            for (const badge of moodBadges) {
+                if (!badge.mood || !badge.category || !badge.value) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        error: 'Invalid mood badge format',
+                        details: 'Each mood badge must have mood, category, and value fields'
+                    });
+                }
+
+                // Insert new mood badge
+                const badgeResult = await client.query(
+                    `INSERT INTO mood_badges (user_id, mood, category, value) 
+                     VALUES ($1, $2, $3, $4)
+                     RETURNING id, mood, category, value, created_at as "createdAt"`,
+                    [id, badge.mood, badge.category, badge.value]
+                );
+                savedMoodBadges.push(badgeResult.rows[0]);
+            }
+        }
+
         await client.query('COMMIT');
 
         // Fetch and return updated profile
@@ -299,7 +326,8 @@ router.put('/:id', async (req, res) => {
 
         res.json({
             ...updatedProfile.rows[0],
-            profileItems: profileItems
+            profileItems: profileItems,
+            moodBadges: savedMoodBadges
         });
     } catch (err) {
         await client.query('ROLLBACK');
