@@ -162,12 +162,28 @@ router.get('/:id', async (req, res) => {
 
         const pingResult = await pool.query(pingQuery, [id]);
 
+        // Get mood badges
+        const badgesQuery = `
+            SELECT 
+                id,
+                mood,
+                category,
+                value,
+                created_at as "createdAt"
+            FROM mood_badges 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC
+        `;
+
+        const badgesResult = await pool.query(badgesQuery, [id]);
+
         // Combine all data
         res.json({
             ...userResult.rows[0],
             profileItems: itemsResult.rows,
             location: locationResult.rows[0] || null,
-            lastPing: pingResult.rows[0] || null
+            lastPing: pingResult.rows[0] || null,
+            moodBadges: badgesResult.rows
         });
     } catch (err) {
         console.error('Error fetching profile:', err);
