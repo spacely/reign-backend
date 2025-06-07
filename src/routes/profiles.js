@@ -302,28 +302,30 @@ router.put('/:id', async (req, res) => {
 
         // Update mood badges if provided
         const savedMoodBadges = [];
-        if (Array.isArray(moodBadges) && moodBadges.length > 0) {
+        if (Array.isArray(moodBadges)) {
             // First delete existing mood badges
             await client.query('DELETE FROM mood_badges WHERE user_id = $1', [id]);
 
-            // Validate each mood badge
-            for (const badge of moodBadges) {
-                if (!badge.mood || !badge.category || !badge.value) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({
-                        error: 'Invalid mood badge format',
-                        details: 'Each mood badge must have mood, category, and value fields'
-                    });
-                }
+            if (moodBadges.length > 0) {
+                // Validate each mood badge
+                for (const badge of moodBadges) {
+                    if (!badge.mood || !badge.category || !badge.value) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            error: 'Invalid mood badge format',
+                            details: 'Each mood badge must have mood, category, and value fields'
+                        });
+                    }
 
-                // Insert new mood badge
-                const badgeResult = await client.query(
-                    `INSERT INTO mood_badges (user_id, mood, category, value) 
-                     VALUES ($1, $2, $3, $4)
-                     RETURNING id, mood, category, value, created_at as "createdAt"`,
-                    [id, badge.mood, badge.category, badge.value]
-                );
-                savedMoodBadges.push(badgeResult.rows[0]);
+                    // Insert new mood badge
+                    const badgeResult = await client.query(
+                        `INSERT INTO mood_badges (user_id, mood, category, value) 
+                         VALUES ($1, $2, $3, $4)
+                         RETURNING id, mood, category, value, created_at as "createdAt"`,
+                        [id, badge.mood, badge.category, badge.value]
+                    );
+                    savedMoodBadges.push(badgeResult.rows[0]);
+                }
             }
         }
 
