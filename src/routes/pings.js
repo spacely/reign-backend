@@ -90,10 +90,10 @@ router.post('/', async (req, res) => {
 
 // GET /pings/nearby
 router.get('/nearby', async (req, res) => {
-    const { lat, lng, userId } = req.query;
+    const { lat, lng, userId, mood, skill, education, experience } = req.query;
 
     // Log incoming parameters
-    console.log('GET /pings/nearby - Query params:', { lat, lng, userId });
+    console.log('GET /pings/nearby - Query params:', { lat, lng, userId, mood, skill, education, experience });
 
     // Validate required parameters
     if (!lat || !lng || !userId) {
@@ -152,6 +152,49 @@ router.get('/nearby', async (req, res) => {
         // Fixed 1km radius (1000 meters)
         const radiusMeters = 1000;
 
+        // Build filter conditions
+        const filterConditions = [];
+        const queryParams = [latitude, longitude, userId, radiusMeters];
+        let paramIndex = 5;
+
+        // Add mood filter
+        if (mood) {
+            filterConditions.push(`p.mood = $${paramIndex}`);
+            queryParams.push(mood);
+            paramIndex++;
+        }
+
+        // Add skill filter
+        if (skill) {
+            filterConditions.push(`(p.category = 'skill' AND p.value = $${paramIndex})`);
+            queryParams.push(skill);
+            paramIndex++;
+        }
+
+        // Add education filter
+        if (education) {
+            filterConditions.push(`(p.category = 'education' AND p.value = $${paramIndex})`);
+            queryParams.push(education);
+            paramIndex++;
+        }
+
+        // Add experience filter
+        if (experience) {
+            filterConditions.push(`(p.category = 'experience' AND p.value = $${paramIndex})`);
+            queryParams.push(experience);
+            paramIndex++;
+        }
+
+        // Build the complete WHERE clause
+        const baseConditions = [
+            'p.user_id != $3',
+            'p.created_at > NOW() - INTERVAL \'15 minutes\'',
+            'earth_distance(ll_to_earth(p.latitude, p.longitude), ll_to_earth($1, $2))::float <= $4'
+        ];
+
+        const allConditions = [...baseConditions, ...filterConditions];
+        const whereClause = allConditions.join(' AND ');
+
         const query = `
             SELECT 
                 u.id as "userId",
@@ -171,17 +214,11 @@ router.get('/nearby', async (req, res) => {
                 )::float as distance
             FROM pings p
             JOIN users u ON u.id = p.user_id
-            WHERE 
-                p.user_id != $3
-                AND p.created_at > NOW() - INTERVAL '15 minutes'
-                AND earth_distance(
-                    ll_to_earth(p.latitude, p.longitude),
-                    ll_to_earth($1, $2)
-                )::float <= $4
+            WHERE ${whereClause}
             ORDER BY distance ASC, p.created_at DESC;
         `;
 
-        const result = await client.query(query, [latitude, longitude, userId, radiusMeters]);
+        const result = await client.query(query, queryParams);
 
         // Transform the results to include displayName
         const transformedResults = result.rows.map(row => ({
