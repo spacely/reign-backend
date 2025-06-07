@@ -302,7 +302,7 @@ router.put('/:id', async (req, res) => {
 
         // Update mood badges if provided
         const savedMoodBadges = [];
-        if (moodBadges && Array.isArray(moodBadges)) {
+        if (Array.isArray(moodBadges) && moodBadges.length > 0) {
             // First delete existing mood badges
             await client.query('DELETE FROM mood_badges WHERE user_id = $1', [id]);
 
