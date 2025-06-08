@@ -28,6 +28,21 @@ router.post('/', async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // Check if email already exists
+        const existingUserResult = await client.query(
+            'SELECT id FROM users WHERE email = $1',
+            [email]
+        );
+
+        if (existingUserResult.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: 'Email already exists',
+                userId: existingUserResult.rows[0].id,
+                details: 'A user with this email already exists. Use PUT /profiles/:id to update the profile.'
+            });
+        }
+
         // Create user
         const userResult = await client.query(
             `INSERT INTO users (email, name) 
