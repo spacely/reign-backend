@@ -209,6 +209,117 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// GET /profiles/by-email/:email
+router.get('/by-email/:email', async (req, res) => {
+    const { email } = req.params;
+
+    // Validate email format
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_REGEX.test(email)) {
+        return res.status(400).json({
+            error: 'Invalid email',
+            details: 'Please provide a valid email address'
+        });
+    }
+
+    try {
+        // Get user profile by email
+        const userQuery = `
+            SELECT 
+                u.id as "userId",
+                u.email,
+                u.name,
+                u.created_at as "createdAt",
+                u.updated_at as "updatedAt"
+            FROM users u
+            WHERE u.email = $1
+        `;
+
+        const userResult = await pool.query(userQuery, [email]);
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'User not found',
+                details: `No user exists with email ${email}`
+            });
+        }
+
+        const userId = userResult.rows[0].userId;
+
+        // Get profile items
+        const itemsQuery = `
+            SELECT 
+                id,
+                item_type as "itemType",
+                item_data as "itemData",
+                created_at as "createdAt",
+                updated_at as "updatedAt"
+            FROM profile_items 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC
+        `;
+
+        const itemsResult = await pool.query(itemsQuery, [userId]);
+
+        // Get latest location
+        const locationQuery = `
+            SELECT 
+                latitude,
+                longitude,
+                created_at as "updatedAt"
+            FROM locations 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        `;
+
+        const locationResult = await pool.query(locationQuery, [userId]);
+
+        // Get latest ping
+        const pingQuery = `
+            SELECT 
+                mood,
+                created_at as "updatedAt"
+            FROM pings 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        `;
+
+        const pingResult = await pool.query(pingQuery, [userId]);
+
+        // Get mood badges
+        const badgesQuery = `
+            SELECT 
+                id,
+                mood,
+                category,
+                value,
+                created_at as "createdAt"
+            FROM mood_badges 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC
+        `;
+
+        const badgesResult = await pool.query(badgesQuery, [userId]);
+
+        // Combine all data
+        res.json({
+            ...userResult.rows[0],
+            profileItems: itemsResult.rows,
+            location: locationResult.rows[0] || null,
+            lastPing: pingResult.rows[0] || null,
+            moodBadges: badgesResult.rows
+        });
+    } catch (err) {
+        console.error('Error fetching profile by email:', err);
+        res.status(500).json({
+            error: 'Internal server error',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+});
+
 // PUT /profiles/:id
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
