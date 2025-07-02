@@ -2,9 +2,74 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
 
+// Validate category helper function
+const isValidCategory = (category) => ['skill', 'education', 'experience'].includes(category);
+
+// Validate profile image helper function
+const validateProfileImage = (imageData) => {
+    if (!imageData || typeof imageData !== 'string') {
+        return { valid: false, error: 'Profile image must be a string' };
+    }
+
+    // Check JPEG format
+    if (!imageData.startsWith('data:image/jpeg;base64,')) {
+        return { valid: false, error: 'Profile image must be in JPEG format (data:image/jpeg;base64,...)' };
+    }
+
+    // Extract base64 data and validate format
+    const base64Data = imageData.split(',')[1];
+    if (!base64Data) {
+        return { valid: false, error: 'Invalid base64 format' };
+    }
+
+    // Validate base64 format
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(base64Data)) {
+        return { valid: false, error: 'Invalid base64 encoding' };
+    }
+
+    // Check size (2MB limit)
+    const sizeInBytes = (base64Data.length * 3) / 4;
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    if (sizeInBytes > maxSize) {
+        return { valid: false, error: 'Profile image size exceeds 2MB limit' };
+    }
+
+    return { valid: true };
+};
+
+// Helper function to get profile image for a user
+const getProfileImage = async (client, userId) => {
+    const imageQuery = `
+        SELECT item_data->'imageData' as image_data
+        FROM profile_items 
+        WHERE user_id = $1 AND item_type = 'profile_image'
+        ORDER BY created_at DESC 
+        LIMIT 1
+    `;
+    const imageResult = await client.query(imageQuery, [userId]);
+    return imageResult.rows.length > 0 ? imageResult.rows[0].image_data : null;
+};
+
+// Helper function to save profile image
+const saveProfileImage = async (client, userId, imageData) => {
+    // First delete any existing profile image
+    await client.query(
+        'DELETE FROM profile_items WHERE user_id = $1 AND item_type = $2',
+        [userId, 'profile_image']
+    );
+
+    // Insert new profile image
+    await client.query(
+        `INSERT INTO profile_items (user_id, item_type, item_data) 
+         VALUES ($1, $2, $3)`,
+        [userId, 'profile_image', JSON.stringify({ imageData })]
+    );
+};
+
 // POST /profiles - Create a new user
 router.post('/', async (req, res) => {
-    const { email, name, profileItems: items } = req.body;
+    const { email, name, profileItems: items, profileImageData } = req.body;
 
     // Validate required fields
     if (!email) {
@@ -21,6 +86,17 @@ router.post('/', async (req, res) => {
             error: 'Invalid email',
             details: 'Please provide a valid email address'
         });
+    }
+
+    // Validate profile image if provided
+    if (profileImageData) {
+        const imageValidation = validateProfileImage(profileImageData);
+        if (!imageValidation.valid) {
+            return res.status(400).json({
+                error: 'Invalid profile image',
+                details: imageValidation.error
+            });
+        }
     }
 
     const client = await pool.connect();
@@ -79,14 +155,23 @@ router.post('/', async (req, res) => {
             }
         }
 
+        // Save profile image if provided
+        if (profileImageData) {
+            await saveProfileImage(client, userId, profileImageData);
+        }
+
         await client.query('COMMIT');
+
+        // Get profile image for response
+        const profileImage = profileImageData || null;
 
         res.status(201).json({
             status: 'ok',
             message: 'Profile created successfully',
             data: {
                 user: userResult.rows[0],
-                profileItems: profileItems
+                profileItems: profileItems,
+                profileImage: profileImage
             }
         });
     } catch (err) {
@@ -113,6 +198,7 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
 
+    const client = await pool.connect();
     try {
         // Get user profile
         const userQuery = `
@@ -126,7 +212,7 @@ router.get('/:id', async (req, res) => {
             WHERE u.id = $1
         `;
 
-        const userResult = await pool.query(userQuery, [id]);
+        const userResult = await client.query(userQuery, [id]);
 
         if (userResult.rows.length === 0) {
             return res.status(404).json({
@@ -135,7 +221,7 @@ router.get('/:id', async (req, res) => {
             });
         }
 
-        // Get profile items
+        // Get profile items (excluding profile images)
         const itemsQuery = `
             SELECT 
                 id,
@@ -144,11 +230,14 @@ router.get('/:id', async (req, res) => {
                 created_at as "createdAt",
                 updated_at as "updatedAt"
             FROM profile_items 
-            WHERE user_id = $1 
+            WHERE user_id = $1 AND item_type != 'profile_image'
             ORDER BY created_at DESC
         `;
 
-        const itemsResult = await pool.query(itemsQuery, [id]);
+        const itemsResult = await client.query(itemsQuery, [id]);
+
+        // Get profile image separately
+        const profileImage = await getProfileImage(client, id);
 
         // Get latest location
         const locationQuery = `
@@ -162,7 +251,7 @@ router.get('/:id', async (req, res) => {
             LIMIT 1
         `;
 
-        const locationResult = await pool.query(locationQuery, [id]);
+        const locationResult = await client.query(locationQuery, [id]);
 
         // Get latest ping
         const pingQuery = `
@@ -175,7 +264,7 @@ router.get('/:id', async (req, res) => {
             LIMIT 1
         `;
 
-        const pingResult = await pool.query(pingQuery, [id]);
+        const pingResult = await client.query(pingQuery, [id]);
 
         // Get mood badges
         const badgesQuery = `
@@ -190,22 +279,31 @@ router.get('/:id', async (req, res) => {
             ORDER BY created_at DESC
         `;
 
-        const badgesResult = await pool.query(badgesQuery, [id]);
+        const badgesResult = await client.query(badgesQuery, [id]);
 
         // Combine all data
-        res.json({
+        const response = {
             ...userResult.rows[0],
             profileItems: itemsResult.rows,
             location: locationResult.rows[0] || null,
             lastPing: pingResult.rows[0] || null,
             moodBadges: badgesResult.rows
-        });
+        };
+
+        // Add profile image if it exists
+        if (profileImage) {
+            response.profileImage = profileImage;
+        }
+
+        res.json(response);
     } catch (err) {
         console.error('Error fetching profile:', err);
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
+    } finally {
+        client.release();
     }
 });
 
@@ -222,6 +320,7 @@ router.get('/by-email/:email', async (req, res) => {
         });
     }
 
+    const client = await pool.connect();
     try {
         // Get user profile by email
         const userQuery = `
@@ -235,7 +334,7 @@ router.get('/by-email/:email', async (req, res) => {
             WHERE u.email = $1
         `;
 
-        const userResult = await pool.query(userQuery, [email]);
+        const userResult = await client.query(userQuery, [email]);
 
         if (userResult.rows.length === 0) {
             return res.status(404).json({
@@ -246,7 +345,7 @@ router.get('/by-email/:email', async (req, res) => {
 
         const userId = userResult.rows[0].userId;
 
-        // Get profile items
+        // Get profile items (excluding profile images)
         const itemsQuery = `
             SELECT 
                 id,
@@ -255,11 +354,14 @@ router.get('/by-email/:email', async (req, res) => {
                 created_at as "createdAt",
                 updated_at as "updatedAt"
             FROM profile_items 
-            WHERE user_id = $1 
+            WHERE user_id = $1 AND item_type != 'profile_image'
             ORDER BY created_at DESC
         `;
 
-        const itemsResult = await pool.query(itemsQuery, [userId]);
+        const itemsResult = await client.query(itemsQuery, [userId]);
+
+        // Get profile image separately
+        const profileImage = await getProfileImage(client, userId);
 
         // Get latest location
         const locationQuery = `
@@ -273,7 +375,7 @@ router.get('/by-email/:email', async (req, res) => {
             LIMIT 1
         `;
 
-        const locationResult = await pool.query(locationQuery, [userId]);
+        const locationResult = await client.query(locationQuery, [userId]);
 
         // Get latest ping
         const pingQuery = `
@@ -286,7 +388,7 @@ router.get('/by-email/:email', async (req, res) => {
             LIMIT 1
         `;
 
-        const pingResult = await pool.query(pingQuery, [userId]);
+        const pingResult = await client.query(pingQuery, [userId]);
 
         // Get mood badges
         const badgesQuery = `
@@ -301,29 +403,38 @@ router.get('/by-email/:email', async (req, res) => {
             ORDER BY created_at DESC
         `;
 
-        const badgesResult = await pool.query(badgesQuery, [userId]);
+        const badgesResult = await client.query(badgesQuery, [userId]);
 
         // Combine all data
-        res.json({
+        const response = {
             ...userResult.rows[0],
             profileItems: itemsResult.rows,
             location: locationResult.rows[0] || null,
             lastPing: pingResult.rows[0] || null,
             moodBadges: badgesResult.rows
-        });
+        };
+
+        // Add profile image if it exists
+        if (profileImage) {
+            response.profileImage = profileImage;
+        }
+
+        res.json(response);
     } catch (err) {
         console.error('Error fetching profile by email:', err);
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
+    } finally {
+        client.release();
     }
 });
 
 // PUT /profiles/:id
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, email, profileItems: items, moodBadges } = req.body;
+    const { name, email, profileItems: items, moodBadges, profileImageData } = req.body;
 
     // Validate UUID format
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -332,6 +443,17 @@ router.put('/:id', async (req, res) => {
             error: 'Invalid id',
             details: 'Profile ID must be a valid UUID'
         });
+    }
+
+    // Validate profile image if provided
+    if (profileImageData) {
+        const imageValidation = validateProfileImage(profileImageData);
+        if (!imageValidation.valid) {
+            return res.status(400).json({
+                error: 'Invalid profile image',
+                details: imageValidation.error
+            });
+        }
     }
 
     const client = await pool.connect();
@@ -396,11 +518,11 @@ router.put('/:id', async (req, res) => {
             }
         }
 
-        // Update profile items if provided
+        // Update profile items if provided (excluding profile images)
         const profileItems = [];
         if (items && Array.isArray(items)) {
-            // First delete existing items
-            await client.query('DELETE FROM profile_items WHERE user_id = $1', [id]);
+            // First delete existing items (excluding profile images)
+            await client.query('DELETE FROM profile_items WHERE user_id = $1 AND item_type != $2', [id, 'profile_image']);
 
             // Then insert new items
             for (const item of items) {
@@ -424,6 +546,11 @@ router.put('/:id', async (req, res) => {
                 );
                 profileItems.push(itemResult.rows[0]);
             }
+        }
+
+        // Update profile image if provided
+        if (profileImageData) {
+            await saveProfileImage(client, id, profileImageData);
         }
 
         // Update mood badges if provided
@@ -468,11 +595,21 @@ router.put('/:id', async (req, res) => {
             WHERE u.id = $1
         `, [id]);
 
-        res.json({
+        // Get updated profile image
+        const profileImage = await getProfileImage(client, id);
+
+        const response = {
             ...updatedProfile.rows[0],
             profileItems: profileItems,
             moodBadges: savedMoodBadges
-        });
+        };
+
+        // Add profile image if it exists
+        if (profileImage) {
+            response.profileImage = profileImage;
+        }
+
+        res.json(response);
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error updating profile:', err);
