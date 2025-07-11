@@ -48,24 +48,28 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // Try to create the connection
-        await pool.query(
-            'INSERT INTO connections (from_user, to_user) VALUES ($1, $2)',
+        // Create connection with UPSERT to avoid duplicate errors
+        const result = await pool.query(
+            `INSERT INTO connections (from_user, to_user) 
+             VALUES ($1, $2) 
+             ON CONFLICT (from_user, to_user) DO NOTHING
+             RETURNING *`,
             [fromUser, toUser]
         );
 
-        res.json({
-            status: 'ok',
-            message: 'Connected successfully'
-        });
-    } catch (err) {
-        // Check for duplicate connection
-        if (err.code === '23505') { // Unique violation
-            return res.status(409).json({
-                error: 'Already connected',
-                message: 'A connection already exists between these users'
+        // Check if connection was created or already existed
+        if (result.rows.length > 0) {
+            res.json({
+                status: 'ok',
+                message: 'Connected successfully'
+            });
+        } else {
+            res.status(200).json({
+                status: 'ok',
+                message: 'Already connected'
             });
         }
+    } catch (err) {
 
         console.error('Error creating connection:', err);
         res.status(500).json({

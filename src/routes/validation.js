@@ -307,11 +307,11 @@ router.post('/request', async (req, res) => {
             });
         }
 
-        // Create validation request
+        // Create validation request - let database handle ID generation
         const requestResult = await client.query(
             `INSERT INTO validation_requests (from_user_id, to_user_id, category, specific_item)
              VALUES ($1, $2, $3, $4)
-             RETURNING id`,
+             RETURNING id, created_at`,
             [fromUserId, toUserId, category, specificItem]
         );
 
@@ -319,6 +319,7 @@ router.post('/request', async (req, res) => {
 
         res.status(201).json({
             requestId: requestResult.rows[0].id,
+            createdAt: requestResult.rows[0].created_at,
             message: 'Validation request sent successfully'
         });
     } catch (error) {
