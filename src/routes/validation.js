@@ -112,8 +112,8 @@ router.get('/nearby', async (req, res) => {
             JOIN locations l ON u.id = l.user_id
             LEFT JOIN validation_records vr ON u.id = vr.validated_user_id
             WHERE u.id != $1
-            AND l.latitude BETWEEN $2 - $4 AND $2 + $4
-            AND l.longitude BETWEEN $3 - $4 AND $3 + $4
+            AND l.latitude BETWEEN ($2::float - $4::float) AND ($2::float + $4::float)
+            AND l.longitude BETWEEN ($3::float - $4::float) AND ($3::float + $4::float)
             GROUP BY u.id, u.name, u.email, l.latitude, l.longitude
         `;
 
