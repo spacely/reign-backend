@@ -153,6 +153,7 @@ router.get('/nearby', async (req, res) => {
             FROM locations l
             JOIN users u ON u.id = l.user_id
             WHERE ${createNearbyCondition('l')}
+            AND l.created_at > NOW() - INTERVAL '2 hours'
             ORDER BY l.created_at DESC;
         `;
 
