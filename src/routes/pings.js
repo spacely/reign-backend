@@ -92,8 +92,8 @@ router.post('/', async (req, res) => {
 router.get('/nearby', async (req, res) => {
     const { lat, lng, userId, mood, skill, education, experience } = req.query;
 
-    // Log incoming parameters
-    console.log('GET /pings/nearby - Query params:', { lat, lng, userId, mood, skill, education, experience });
+    // Log incoming parameters (commented out to reduce console noise)
+    // console.log('GET /pings/nearby - Query params:', { lat, lng, userId, mood, skill, education, experience });
 
     // Validate required parameters
     if (!lat || !lng || !userId) {
