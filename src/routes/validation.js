@@ -8,23 +8,9 @@ const isValidUUID = (uuid) => {
     return UUID_REGEX.test(uuid);
 };
 
-// Helper function to calculate distance using Haversine formula (in meters)
-const calculateDistance = (lat1, lng1, lat2, lng2) => {
-    const R = 6371000; // Earth's radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-};
+// Distance calculation removed - proximity no longer required for validation
 
-// Helper function to check if users are within validation range (3 meters)
-const isWithinValidationRange = (lat1, lng1, lat2, lng2) => {
-    const distance = calculateDistance(lat1, lng1, lat2, lng2);
-    return distance <= 3; // 3 meters
-};
+// Note: Proximity validation removed - users only need to be connected
 
 // Helper function to get connection status between two users
 const getConnectionStatus = async (client, userId1, userId2) => {
@@ -48,27 +34,15 @@ const getProfileItems = async (client, userId) => {
     return result.rows;
 };
 
-// GET /validation/nearby - Get nearby users who can be validated
+// GET /validation/nearby - Get connected users who can be validated
 router.get('/nearby', async (req, res) => {
-    const { lat, lng, radius = 0.01, userId } = req.query;
+    const { userId } = req.query;
 
     // Validate required parameters
-    if (!lat || !lng || !userId) {
+    if (!userId) {
         return res.status(400).json({
             error: 'Missing required parameters',
-            details: 'lat, lng, and userId are required'
-        });
-    }
-
-    // Validate numeric values
-    const latitude = parseFloat(lat);
-    const longitude = parseFloat(lng);
-    const radiusNum = parseFloat(radius);
-
-    if (isNaN(latitude) || isNaN(longitude) || isNaN(radiusNum)) {
-        return res.status(400).json({
-            error: 'Invalid parameters',
-            details: 'lat, lng, and radius must be valid numbers'
+            details: 'userId is required'
         });
     }
 
@@ -80,75 +54,46 @@ router.get('/nearby', async (req, res) => {
         });
     }
 
-    // Validate coordinate ranges
-    if (latitude < -90 || latitude > 90) {
-        return res.status(400).json({
-            error: 'Invalid latitude',
-            details: 'Latitude must be between -90 and 90'
-        });
-    }
-
-    if (longitude < -180 || longitude > 180) {
-        return res.status(400).json({
-            error: 'Invalid longitude',
-            details: 'Longitude must be between -180 and 180'
-        });
-    }
-
     const client = await pool.connect();
     try {
-        await enablePostGISExtensions(client);
-
-        // Find nearby users within radius
-        const nearbyUsersQuery = `
+        // Find all connected users
+        const connectedUsersQuery = `
             SELECT DISTINCT
                 u.id as user_id,
                 u.name,
                 u.email,
-                l.latitude,
-                l.longitude,
                 COUNT(vr.id) as validation_count
             FROM users u
-            JOIN locations l ON u.id = l.user_id
+            JOIN connections c ON (
+                (c.from_user = $1 AND c.to_user = u.id) OR 
+                (c.to_user = $1 AND c.from_user = u.id)
+            )
             LEFT JOIN validation_records vr ON u.id = vr.validated_user_id
             WHERE u.id != $1
-            AND l.latitude BETWEEN ($2::float - $4::float) AND ($2::float + $4::float)
-            AND l.longitude BETWEEN ($3::float - $4::float) AND ($3::float + $4::float)
-            GROUP BY u.id, u.name, u.email, l.latitude, l.longitude
+            AND c.status = 'connected'
+            GROUP BY u.id, u.name, u.email
         `;
 
-        const nearbyUsers = await client.query(nearbyUsersQuery, [userId, latitude, longitude, radiusNum]);
+        const connectedUsers = await client.query(connectedUsersQuery, [userId]);
 
         const result = [];
-        for (const user of nearbyUsers.rows) {
-            const distance = calculateDistance(latitude, longitude, user.latitude, user.longitude);
+        for (const user of connectedUsers.rows) {
+            const profileItems = await getProfileItems(client, user.user_id);
 
-            // Filter to users within 1km for initial filter
-            if (distance <= 1000) {
-                const profileItems = await getProfileItems(client, user.user_id);
-                const connectionState = await getConnectionStatus(client, userId, user.user_id);
-
-                // Only include connected users within 3 meters for validation
-                if (connectionState === 'connected' && distance <= 3) {
-                    result.push({
-                        userId: user.user_id,
-                        name: user.name,
-                        email: user.email,
-                        displayName: user.name || user.email,
-                        latitude: user.latitude,
-                        longitude: user.longitude,
-                        distance: Math.round(distance),
-                        profileItems,
-                        connectionState,
-                        validationCount: parseInt(user.validation_count)
-                    });
-                }
-            }
+            result.push({
+                userId: user.user_id,
+                name: user.name,
+                email: user.email,
+                displayName: user.name || user.email,
+                profileItems,
+                connectionState: 'connected',
+                validationCount: parseInt(user.validation_count)
+            });
         }
 
         res.json(result);
     } catch (error) {
-        console.error('Error fetching nearby validatable users:', error);
+        console.error('Error fetching connected validatable users:', error);
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -228,36 +173,7 @@ router.post('/request', async (req, res) => {
             });
         }
 
-        // Check proximity using latest locations
-        const locationsQuery = `
-            SELECT user_id, latitude, longitude 
-            FROM locations 
-            WHERE user_id IN ($1, $2)
-            ORDER BY created_at DESC
-        `;
-        const locations = await client.query(locationsQuery, [fromUserId, toUserId]);
-
-        if (locations.rows.length !== 2) {
-            await client.query('ROLLBACK');
-            return res.status(422).json({
-                error: 'Location data not available',
-                details: 'Both users must have location data for validation'
-            });
-        }
-
-        const fromUserLocation = locations.rows.find(l => l.user_id === fromUserId);
-        const toUserLocation = locations.rows.find(l => l.user_id === toUserId);
-
-        if (!isWithinValidationRange(
-            fromUserLocation.latitude, fromUserLocation.longitude,
-            toUserLocation.latitude, toUserLocation.longitude
-        )) {
-            await client.query('ROLLBACK');
-            return res.status(422).json({
-                error: 'Users too far apart',
-                details: 'Users must be within 3 meters for validation'
-            });
-        }
+        // No proximity check needed - connection is sufficient
 
         // Verify the specific item exists in target user's profile
         const itemCheck = await client.query(
