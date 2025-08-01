@@ -149,11 +149,15 @@ router.get('/nearby', async (req, res) => {
                 u.name,
                 l.latitude,
                 l.longitude,
-                l.created_at as "locationUpdatedAt"
+                l.created_at as "locationUpdatedAt",
+                us.last_seen as "lastSeen",
+                us.is_broadcasting as "isBroadcasting"
             FROM locations l
             JOIN users u ON u.id = l.user_id
+            JOIN user_status us ON u.id = us.user_id
             WHERE ${createNearbyCondition('l')}
-            AND l.created_at > NOW() - INTERVAL '2 hours'
+            AND us.is_broadcasting = true
+            AND us.last_seen > NOW() - INTERVAL '3 minutes'
             ORDER BY l.created_at DESC;
         `;
 
