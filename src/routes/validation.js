@@ -344,7 +344,7 @@ router.post('/respond', async (req, res) => {
             await client.query(
                 `INSERT INTO validation_records (
                     validated_user_id, validator_user_id, category, 
-                    specific_item, validation_request_id
+                    specific_item, request_id
                 ) VALUES ($1, $2, $3, $4, $5)`,
                 [
                     request.to_user_id,
